@@ -1,6 +1,6 @@
 # AGRIS
 
-**A laser targeting system that uses computer vision to detect shapes and drive a pan/tilt servo gimbal to aim a laser at detected targets, mounted on a remotely driven mecanum platform.
+A laser targeting system that uses cv to detect shapes and drive a pan/tilt servo gimbal to aim a laser at detected targets, mounted on a remotely driven platform.
 
 ## System overview
 
@@ -47,8 +47,6 @@ DualShock 4 (Bluetooth)
 agris.py                        Python tracking app (GUI, detection, UDP sender)
 AGRIS_AiThinker/
   AGRIS_AiThinker.ino           AI-Thinker firmware (MJPEG stream + UDP + servo/laser)
-AGRIS_ESP32S3/
-  AGRIS_ESP32S3.ino             ESP32-S3 alternate board target (same role as AiThinker)
 ESP32S1/
   ESP32S1.ino                   Mecanum drive firmware (DualShock4 → motors)
 CAD_Design/
