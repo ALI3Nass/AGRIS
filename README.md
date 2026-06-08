@@ -1,110 +1,131 @@
 # AGRIS
 
-A laser targeting system that uses cv to detect shapes and drive a pan/tilt servo gimbal to aim a laser at detected targets, mounted on a remotely driven platform.
+A computer vision-driven laser targeting system mounted on a remotely controlled mecanum platform. The system detects geometric shapes in a live camera feed and automatically aims a laser at them using a pan/tilt servo gimbal — while a separate subsystem handles omnidirectional drive via a controller.
 
-## System overview
+---
 
-Two independent subsystems share the same metal frame:
+<p align="center">
+  <img src="turret.png" width="700" alt="AGRIS turret assembly">
+</p>
 
-**Vision/targeting** — a fixed OV2640 camera streams MJPEG video to a Python desktop app. The app detects target shapes using OpenCV, calculates the angular error from frame center, and sends absolute servo positions over UDP to the AI-Thinker ESP32. The ESP32 drives two MG996R servos and a laser to point at the target.
+---
 
-**Drive** — an ESP32-S1 connects to a DualShock 4 controller over Bluetooth and drives four mecanum wheels independently, letting the platform strafe and rotate in place.
+## How it works
+
+Two independent subsystems share the same laser-cut metal frame:
+
+**Vision / Targeting**
+The OV2640 camera streams MJPEG video over Wi-Fi to `agris.py` on a Linux host. OpenCV detects target shapes, calculates the angular error from the frame center, and sends absolute servo positions via UDP to the AI-Thinker ESP32. The ESP32 drives two MG996R servos and gates the laser on confirmed lock.
+
+**Drive**
+An ESP32-S1 connects to a DualShock 4 over Bluetooth (Bluepad32) and independently drives four mecanum wheels — full omnidirectional movement, strafing, and in-place rotation.
 
 ```
-OV2640 camera (fixed to frame)
+OV2640 (fixed to frame)
   → MJPEG stream over Wi-Fi
-  → agris.py on PC (shape detection, FOV-aware proportional control)
-  → UDP servo commands  →  AI-Thinker ESP32
-                             ├── MG996R pan servo
-                             ├── MG996R tilt servo
-                             └── laser module
+  → agris.py on PC  (shape detection, FOV-aware proportional control)
+  → UDP :4210  →  AI-Thinker ESP32
+                    ├── MG996R pan servo   (GPIO 12)
+                    ├── MG996R tilt servo  (GPIO 13)
+                    └── Laser module       (GPIO 2)
 
 DualShock 4 (Bluetooth)
   → ESP32-S1
-      ├── mecanum wheel FL
-      ├── mecanum wheel FR
-      ├── mecanum wheel RL
-      └── mecanum wheel RR
+      ├── Mecanum FL
+      ├── Mecanum FR
+      ├── Mecanum RL
+      └── Mecanum RR
 ```
+
+---
 
 ## Hardware
 
-| Part | Details |
+| Component | Details |
 |---|---|
-| Camera + servo controller | AI-Thinker ESP32-CAM (OV2640) |
+| Vision + servo controller | AI-Thinker ESP32-CAM (OV2640) |
 | Drive controller | ESP32-S1 |
-| Camera | OV2640, QVGA (320×240) for low latency |
-| Servos | MG996R × 2 (pan/tilt) |
-| Laser | LaserTree LT-40W-F23 (~5W optical, 12V/1.8A, PWM via signal wire) |
-| Controller | DualShock 4 over Bluetooth (Bluepad32) |
-| Host | Linux PC running agris.py |
+| Camera | OV2640 — QVGA (320×240) for low latency |
+| Servos | MG996R × 2 (pan / tilt) |
+| Laser | LaserTree LT-40W-F23 (~5 W optical, 12 V / 1.8 A, PWM via signal wire) |
+| Controller | DualShock 4 over Bluetooth |
 | Frame | Laser-cut metal — DXF files in `CAD_Design/` |
-| UDP port | 4210 |
+
+---
 
 ## Repository layout
 
 ```
-agris.py                        Python tracking app (GUI, detection, UDP sender)
+agris.py                     Python tracking app (GUI, detection, UDP sender)
 AGRIS_AiThinker/
-  AGRIS_AiThinker.ino           AI-Thinker firmware (MJPEG stream + UDP + servo/laser)
+  AGRIS_AiThinker.ino        AI-Thinker firmware (MJPEG stream + UDP + servo/laser)
 ESP32S1/
-  ESP32S1.ino                   Mecanum drive firmware (DualShock4 → motors)
+  ESP32S1.ino                Mecanum drive firmware (DualShock 4 → motors)
 CAD_Design/
-  part-1.dxf                    Laser-cut frame parts
+  part-1.dxf
   part-2.dxf
   part-3.dxf
+  turret.jpg
 ```
 
-## Software dependencies
+---
 
-```
+## Setup
+
+**Python dependencies**
+```bash
 pip install opencv-python numpy pillow requests
 ```
 
-Arduino libraries: `esp32-camera`, `ESP32Servo`, `AsyncUDP`, `Bluepad32`
+**Arduino libraries**
+`esp32-camera` · `ESP32Servo` · `AsyncUDP` · `Bluepad32`
 
-## Detected shapes
 
-The vision pipeline uses adaptive thresholding and contour classification:
+Flash `AGRIS_AiThinker.ino` to the AI-Thinker board and `ESP32S1.ino` to the drive controller, then run:
+```bash
+python agris.py
+```
+
+---
+
+## Vision pipeline
+
+Adaptive thresholding + contour classification. Detectable shapes:
 
 - Rectangle
 - Square
 - Circle
-- Plus cross (+)
-- X cross (×)
+- Plus cross `+`
+- X cross `×`
 
 Target priority and per-shape enable/disable are configurable at runtime in the GUI.
 
+---
+
 ## Communication protocol
 
-UDP packet sent from `agris.py` to the ESP32:
+UDP packet sent from `agris.py` → ESP32 on port **4210**:
 
 ```
 PAN:xxxx,TILT:xxxx,LASER:x
 ```
 
-Values are microseconds for the servo signal. Laser is `0` or `1`.
+Values are microseconds for the servo signal. `LASER` is `0` or `1`.
 
-## Servo ranges
+**Servo ranges**
 
 | Axis | Min | Center | Max |
 |---|---|---|---|
 | Pan | 500 µs | 1632 µs | 2500 µs |
 | Tilt | 1050 µs | 1500 µs | 2200 µs |
 
-## AI-Thinker GPIO assignments
+Tracking uses one-shot absolute positioning — servo angles are computed directly from pixel error and camera FOV, not accumulated incrementally.
 
-| Function | GPIO |
-|---|---|
-| Servo pan | 12 |
-| Servo tilt | 13 |
-| Laser | 2 |
-| Camera PWDN | 32 |
+---
 
 ## Notes
 
-- Camera is fixed to the frame. Only the laser/servo assembly moves.
-- Tracking uses one-shot absolute positioning — servo position is calculated directly from pixel error and camera FOV, not accumulated incrementally.
-- LASER pin is held LOW during boot to prevent the laser firing on startup.
-- AI-Thinker uses `CAMERA_FB_IN_DRAM` with `fb_count=1` (no PSRAM on this board).
-- ESP32-S3 sketch is an alternate board target with the same firmware role as the AI-Thinker.
+- The laser pin (GPIO 2) is held LOW during boot to prevent accidental firing on startup.
+- AI-Thinker board uses `CAMERA_FB_IN_DRAM` with `fb_count=1` (no PSRAM).
+- An ESP32-S3 sketch is available as an alternate board target for the vision/servo role.
+- The phone camera (IP Webcam → OpenCV HTTP URL) works as a drop-in fallback if the ESP32-CAM is unavailable.
